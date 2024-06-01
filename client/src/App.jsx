@@ -11,23 +11,67 @@ import {
   addDoc,
 } from "firebase/firestore";
 
-const app = () => {
+const App = () => {
   const currentDate = new Date();
-  const userid = "1234";
-  const [type, setType] = useState("");
+  const email = "nav@g.com";
+  const [categories, setCategories] = useState([]);
+  const [searchcategories, setSearchcategories] = useState([]);
   const [selected, setSelected] = useState(null);
   const [favourites, setFavourites] = useState([]);
   const [others, setOthers] = useState([]);
-  const [clicked, setclicked] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (type) => {
+  useEffect(() => {
+    const fetchDocuments = async () => {
+      setLoading(true);
+      const querySnapshot = await getDocs(
+        query(
+          collection(firestore, "posts"),
+          where("email", "==", email),
+          where("used", "==", false)
+        )
+      );
+      const docs = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      if (docs.length === 0) {
+        const allDocsSnapshot = await getDocs(
+          query(collection(firestore, "posts"), where("email", "==", email))
+        );
+        allDocsSnapshot.forEach((doc) => {
+          updateDoc(doc.ref, { used: false });
+        });
+        const allDocs = allDocsSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        setDocuments(allDocs);
+      } else {
+        setDocuments(docs);
+      }
+      setLoading(false);
+    };
+
+    const setDocuments = (docs) => {
+      const favs = docs.filter((doc) => doc.favourite === true);
+      const oths = docs.filter((doc) => doc.favourite !== true);
+      setCategories([...new Set(docs.map((doc) => doc.category))]);
+      setFavourites(favs);
+      setOthers(oths);
+    };
+
+    fetchDocuments();
+  }, []);
+
+  const handleSubmit = async () => {
     try {
       let fvts = [];
       let oth = [];
       const q = query(
         collection(firestore, "posts"),
-        where("userid", "==", userid),
-        where("category", "==", type),
+        where("email", "==", email),
+        where("category", "in", searchcategories),
         where("used", "==", false),
         where("favourite", "==", true)
       );
@@ -37,8 +81,8 @@ const app = () => {
       });
       const p = query(
         collection(firestore, "posts"),
-        where("userid", "==", userid),
-        where("category", "==", type),
+        where("email", "==", email),
+        where("category", "in", searchcategories),
         where("used", "==", false),
         where("favourite", "==", false)
       );
@@ -46,13 +90,15 @@ const app = () => {
       resu.forEach((doc) => {
         oth.push({ id: doc.id, ...doc.data() });
       });
+      console.log(fvts);
       if (fvts.length === 0 && oth.length === 0) {
-        const allDocsQuery = query(
-          collection(firestore, "posts"),
-          where("userid", "==", userid),
-          where("category", "==", type)
+        const allDocsSnapshot = await getDocs(
+          query(
+            collection(firestore, "posts"),
+            where("email", "==", email),
+            where("category", "in", searchcategories)
+          )
         );
-        const allDocsSnapshot = await getDocs(allDocsQuery);
         allDocsSnapshot.forEach((doc) => {
           updateDoc(doc.ref, { used: false });
           const fav = doc.data().favourite;
@@ -65,16 +111,28 @@ const app = () => {
       }
       setFavourites(fvts);
       setOthers(oth);
-      setclicked(true);
     } catch (error) {
       console.log(error);
+    }
+  };
+
+  const handleChange = (e) => {
+    if (e.target.checked) {
+      setSearchcategories((prevCheckedCategories) => [
+        ...prevCheckedCategories,
+        e.target.id,
+      ]);
+    } else {
+      setSearchcategories((prevCheckedCategories) =>
+        prevCheckedCategories.filter((cat) => cat !== e.target.id)
+      );
     }
   };
 
   const handleSelect = async () => {
     try {
       const data = {
-        userid: selected.userid,
+        email: selected.email,
         date: currentDate,
         category: selected.category,
         fav: selected.favourite,
@@ -82,9 +140,8 @@ const app = () => {
         title: selected.title,
         image: selected.image,
       };
-      const docRef = await addDoc(collection(firestore, "Data"), data);
-      const selectedDocRef = await doc(firestore, "posts", selected.id);
-      const up = await updateDoc(selectedDocRef, { used: true });
+      await addDoc(collection(firestore, "Data"), data);
+      await updateDoc(doc(firestore, "posts", selected.id), { used: true });
       window.alert("success");
     } catch (error) {
       console.log(error);
@@ -92,62 +149,44 @@ const app = () => {
   };
 
   return (
-    <div>
-      <div>
-        <p className="text-3xl font-bold underline flex justify-center items-center mt-5 ">
-          Select Type
-        </p>
-        <form className="text-2xl font-bold flex justify-center items-center mt-10 space-x-7">
-          <div>
-            <input
-              type="radio"
-              name="type"
-              onClick={() => setType("casual")}
-            ></input>
-            <label>Casual</label>
-          </div>
-          <div>
-            <input
-              type="radio"
-              name="type"
-              onClick={() => setType("formal")}
-            ></input>
-            <label>Formal</label>
-          </div>
-
-          <div>
-            <input
-              type="radio"
-              name="type"
-              onClick={() => setType("traditional")}
-            ></input>
-            <label>Traditional</label>
-          </div>
-
-          <div>
-            <input
-              type="radio"
-              name="type"
-              onClick={() => setType("party")}
-            ></input>
-            <label>Party</label>
-          </div>
-        </form>
-        <div className="flex justify-center items-center mt-5">
-          <button
-            type="submit"
-            className="text-2xl font-bold border-4 px-2 border-gray-500 mb-5 "
-            onClick={() => {
-              if (type === "") window.alert("select a type");
-              else handleSubmit(type);
-            }}
-          >
-            Display
-          </button>
+    <div className="flex flex-col md:flex-row">
+      {loading && <p className="text-3xl text-center p-10">Loading...</p>}
+      {!loading && (
+        <div className="p-4 border-b-2 md:border-r-2 md:min-h-screen">
+          <p className="text-3xl font-bold underline flex justify-center items-center mt-5 ">
+            Categories
+          </p>
+          <form className="text-xl flex flex-col gap-5 justify-center items-center mt-10">
+            <div>
+              {categories &&
+                categories.map((category) => (
+                  <div key={category} className="gap-2 flex flex-wrap">
+                    <input
+                      type="checkbox"
+                      name="type"
+                      id={category}
+                      onChange={handleChange}
+                    ></input>
+                    <label>{category}</label>
+                  </div>
+                ))}
+            </div>
+            <button
+              className="text-2xl font-bold border-4 px-2 border-gray-500 mb-5 "
+              onClick={(e) => {
+                e.preventDefault();
+                if (searchcategories.length === 0)
+                  window.alert("select atleast one category");
+                else handleSubmit();
+              }}
+            >
+              Display
+            </button>
+          </form>
         </div>
-      </div>
-      {clicked && (
-        <div>
+      )}
+      {!loading && (
+        <div className=" p-5">
           <p className="text-2xl font-bold underline flex justify-center items-center mt-5">
             Your Collections
           </p>
@@ -160,7 +199,7 @@ const app = () => {
                 {favourites.map((data) => (
                   <div
                     className="item"
-                    key={data.id}
+                    key={data.id + "_favourite"}
                     onClick={() => setSelected(data)}
                   >
                     <div className="intro">
@@ -172,6 +211,12 @@ const app = () => {
                     <br />
                     <div className="group">
                       <h3 id="h33" name="h33" className="item-desc">
+                        {data.category}
+                      </h3>
+                    </div>
+                    <br></br>
+                    <div className="group">
+                      <h3 id="h33" name="h33" className="item-desc">
                         {data.description}
                       </h3>
                     </div>
@@ -180,7 +225,6 @@ const app = () => {
               </div>
             </div>
           )}
-          <br></br>
           {others.length > 0 && (
             <div>
               <p className="text-1xl font-bold underline flex justify-center items-center mt-5">
@@ -190,7 +234,7 @@ const app = () => {
                 {others.map((data) => (
                   <div
                     className="item"
-                    key={data.id}
+                    key={data.id + "_other"}
                     onClick={() => setSelected(data)}
                   >
                     <div className="intro">
@@ -200,6 +244,12 @@ const app = () => {
                       <p className="item-category">{data.title}</p>
                     </div>
                     <br />
+                    <div className="group">
+                      <h3 id="h33" name="h33" className="item-desc">
+                        {data.category}
+                      </h3>
+                    </div>
+                    <br></br>
                     <div className="group">
                       <h3 id="h33" name="h33" className="item-desc">
                         {data.description}
@@ -220,9 +270,7 @@ const app = () => {
             <div className="flex justify-center items-center mt-5">
               <button
                 className="text-2xl font-bold border-4 px-2 border-gray-500 mb-5"
-                onClick={() => {
-                  handleSelect();
-                }}
+                onClick={handleSelect}
               >
                 Select
               </button>
@@ -234,4 +282,4 @@ const app = () => {
   );
 };
 
-export default app;
+export default App;
